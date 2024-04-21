@@ -26,6 +26,7 @@ import android.os.Environment;
 import android.os.SystemClock;
 import android.provider.MediaStore;
 import android.util.Log;
+import android.util.Pair;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ImageView;
@@ -304,18 +305,20 @@ static {
         }
     }
 
-    private final static int TEXT_X = 40;
-    private final static int TEXT_Y = 35;
-    private final static int TEXT_WIDTH = 260;
-    private final static int TEXT_HEIGHT = 50;
+    private final static int TEXT_X = 4;
+    private final static int TEXT_Y = 18;
+    private final static int TEXT_WIDTH = 110;
+    private final static int TEXT_HEIGHT = 25;
+    private final boolean DO_NOT_SAVE_IMAGES_HAVING_EMPTY_RESULTS = true;
     public void batchRun() {
+        resultFolderName = "__result" + new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault()).format(new Date());
 
         runOnUiThread(() -> {
             mButtonDetect2.setEnabled(false);
             mButtonDetect2.setText(getString(R.string.detect2_progress));
             mProgressBar2.setVisibility(ProgressBar.VISIBLE);
         });
-        List<String> imageNames = new LinkedList<String>();
+        List<Pair<String, String>> imageNames = new LinkedList<Pair<String, String>>();
             AssetManager assetManager = getAssets();
 
             try {
@@ -323,7 +326,7 @@ static {
 
                 if (files != null) {
                     for (String file : files) {
-                        imageNames.add("img/" + file);
+                        imageNames.add(new Pair<>("img/" + file, file));
                     }
                 }
             } catch (IOException e) {
@@ -348,10 +351,18 @@ static {
         appendLog(wr, new SimpleDateFormat("yyyy_MM_dd_HH-mm-ss", Locale.getDefault()).format(new Date())+" Mdl: "+modelPrefix+" mdl file open...");
         int c = 1;
         float totalfps = 0f;
-        for(String s : imageNames){
+        for(Pair<String, String> s : imageNames){
 
             try {
-                mBitmap = BitmapFactory.decodeStream(getAssets().open(s));
+                mBitmap = BitmapFactory.decodeStream(getAssets().open(s.first));
+                mImgScaleX = (float)mBitmap.getWidth() / PrePostProcessor.INPUT_WIDTH;
+                mImgScaleY = (float)mBitmap.getHeight() / PrePostProcessor.INPUT_HEIGHT;
+
+                mIvScaleX = (mBitmap.getWidth() > mBitmap.getHeight() ? (float)mImageView.getWidth() / mBitmap.getWidth() : (float)mImageView.getHeight() / mBitmap.getHeight());
+                mIvScaleY  = (mBitmap.getHeight() > mBitmap.getWidth() ? (float)mImageView.getHeight() / mBitmap.getHeight() : (float)mImageView.getWidth() / mBitmap.getWidth());
+
+                mStartX = (mImageView.getWidth() - mIvScaleX * mBitmap.getWidth())/2;
+                mStartY = (mImageView.getHeight() -  mIvScaleY * mBitmap.getHeight())/2;
 //                runOnUiThread(() -> {
 //                    mImageView.setImageBitmap(mBitmap);
 //                });
@@ -360,6 +371,7 @@ static {
                 continue;
             }
 
+            Bitmap mmBitmap = mBitmap.copy(Bitmap.Config.ARGB_8888, true);
             Bitmap resizedBitmap = Bitmap.createScaledBitmap(mBitmap, PrePostProcessor.INPUT_WIDTH, PrePostProcessor.INPUT_HEIGHT, true);
 
             final FloatBuffer floatBuffer = Tensor.allocateFloatBuffer(3 * resizedBitmap.getWidth() * resizedBitmap.getHeight());
@@ -401,8 +413,8 @@ static {
                     count++;
                 }
 
-                final ArrayList<Result> results = PrePostProcessor.outputsToPredictions(count, outputs, mImgScaleX, mImgScaleY, mIvScaleX, mIvScaleY, mStartX, mStartY);
-                Bitmap mmBitmap = mBitmap.copy(Bitmap.Config.ARGB_8888, true);
+                final ArrayList<Result> results = PrePostProcessor.outputsToPredictions(count, outputs, mImgScaleX, mImgScaleY, 1, 1, 0, 0);
+                final ArrayList<Result> rresults = PrePostProcessor.outputsToPredictions(count, outputs, mImgScaleX, mImgScaleY, mIvScaleX, mIvScaleY, mStartX, mStartY);
 
                 Canvas canvas = new Canvas(mmBitmap);
                 Paint mPaintRectangle = new Paint();
@@ -423,15 +435,14 @@ static {
                     mPaintText.setColor(Color.WHITE);
                     mPaintText.setStrokeWidth(0);
                     mPaintText.setStyle(Paint.Style.FILL);
-                    mPaintText.setTextSize(32);
+                    mPaintText.setTextSize(16);
                     canvas.drawText(String.format("%s %.2f", PrePostProcessor.mClasses[result.classIndex], result.score), result.rect.left + TEXT_X, result.rect.top + TEXT_Y, mPaintText);
                 }
-
-                File file = new File(logFolder, new SimpleDateFormat("yyyy_MM_dd_HH-mm-ss", Locale.getDefault()).format(new Date()) +
-                        "_" + modelPrefix + ".jpg");
-
+                if (results != null)
+                    if(DO_NOT_SAVE_IMAGES_HAVING_EMPTY_RESULTS ? !results.isEmpty() : true )
                 try {
-                    FileOutputStream stream = new FileOutputStream(file);
+                    FileOutputStream stream = new FileOutputStream(new File(logFolder, new SimpleDateFormat("yyyy_MM_dd_HH-mm-ss", Locale.getDefault()).format(new Date()) +
+                            "_" + modelPrefix +"-"+s.second+ ".jpg"));
                     mmBitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream);
                     stream.flush();
                     stream.close();
@@ -448,7 +459,7 @@ static {
                 runOnUiThread(() -> {
                     mImageView.setImageBitmap(mBitmap);
                     mImageView.invalidate();
-                    mResultView.setResults(results);
+                    mResultView.setResults(rresults);
                     mResultView.invalidate();
                     mResultView.setVisibility(View.VISIBLE);
                 });
