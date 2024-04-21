@@ -10,6 +10,7 @@ import android.Manifest;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.res.AssetManager;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -43,6 +44,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
@@ -64,9 +66,12 @@ static {
     private Button mButtonDetect;
     private Button mButtonDetect2;
     private ProgressBar mProgressBar;
+    private ProgressBar mProgressBar2;
     private Bitmap mBitmap = null;
     private Module mModule = null;
     private float mImgScaleX, mImgScaleY, mIvScaleX, mIvScaleY, mStartX, mStartY;
+    private AssetManager assetManager;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -173,11 +178,11 @@ static {
         });
 
         mButtonDetect2 = findViewById(R.id.detectButton2);
-        mProgressBar = (ProgressBar) findViewById(R.id.progressBar);
+        mProgressBar2 = (ProgressBar) findViewById(R.id.progressBar2);
         mButtonDetect2.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 mButtonDetect2.setEnabled(false);
-                mProgressBar.setVisibility(ProgressBar.VISIBLE);
+                mProgressBar2.setVisibility(ProgressBar.VISIBLE);
                 mButtonDetect2.setText(getString(R.string.run_model));
 
                 mImgScaleX = (float)mBitmap.getWidth() / PrePostProcessor.INPUT_WIDTH;
@@ -250,58 +255,97 @@ static {
         }
     }
 
+    
+
     public void batchRun() {
-        Bitmap resizedBitmap = Bitmap.createScaledBitmap(mBitmap, PrePostProcessor.INPUT_WIDTH, PrePostProcessor.INPUT_HEIGHT, true);
+        runOnUiThread(() -> {
+            mButtonDetect2.setEnabled(false);
+            mButtonDetect2.setText(getString(R.string.detect2_progress));
+            mProgressBar2.setVisibility(ProgressBar.VISIBLE);
+        });
+        List<String> imageNames = new LinkedList<String>();
+            AssetManager assetManager = getAssets();
 
-        final FloatBuffer floatBuffer = Tensor.allocateFloatBuffer(3 * resizedBitmap.getWidth() * resizedBitmap.getHeight());
-        TensorImageUtils.bitmapToFloatBuffer(resizedBitmap, 0, 0, resizedBitmap.getWidth(), resizedBitmap.getHeight(), PrePostProcessor.NO_MEAN_RGB, PrePostProcessor.NO_STD_RGB, floatBuffer, 0);
-        final Tensor inputTensor = Tensor.fromBlob(floatBuffer, new long[]{3, resizedBitmap.getHeight(), resizedBitmap.getWidth()});
+            try {
+                String[] files = assetManager.list("img");
 
-        final long startTime = SystemClock.elapsedRealtime();
-        IValue[] outputTuple = mModule.forward(IValue.listFrom(inputTensor)).toTuple();
-        final long inferenceTime = SystemClock.elapsedRealtime() - startTime;
-        Log.d("D2Go", "inference time (ms): " + inferenceTime);
-
-        final Map<String, IValue> map = outputTuple[1].toList()[0].toDictStringKey();
-        float[] boxesData = new float[]{};
-        float[] scoresData = new float[]{};
-        long[] labelsData = new long[]{};
-        if (map.containsKey("boxes")) {
-            final Tensor boxesTensor = map.get("boxes").toTensor();
-            final Tensor scoresTensor = map.get("scores").toTensor();
-            final Tensor labelsTensor = map.get("labels").toTensor();
-            boxesData = boxesTensor.getDataAsFloatArray();
-            scoresData = scoresTensor.getDataAsFloatArray();
-            labelsData = labelsTensor.getDataAsLongArray();
-
-            final int n = scoresData.length;
-            float[] outputs = new float[n * PrePostProcessor.OUTPUT_COLUMN];
-            int count = 0;
-            for (int i = 0; i < n; i++) {
-                if (scoresData[i] < 0.5)
-                    continue;
-
-                outputs[PrePostProcessor.OUTPUT_COLUMN * count + 0] = boxesData[4 * i + 0];
-                outputs[PrePostProcessor.OUTPUT_COLUMN * count + 1] = boxesData[4 * i + 1];
-                outputs[PrePostProcessor.OUTPUT_COLUMN * count + 2] = boxesData[4 * i + 2];
-                outputs[PrePostProcessor.OUTPUT_COLUMN * count + 3] = boxesData[4 * i + 3];
-                outputs[PrePostProcessor.OUTPUT_COLUMN * count + 4] = scoresData[i];
-                outputs[PrePostProcessor.OUTPUT_COLUMN * count + 5] = labelsData[i] - 1;
-                count++;
+                if (files != null) {
+                    for (String file : files) {
+                        imageNames.add("img/" + file);
+                    }
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
             }
 
-            final ArrayList<Result> results = PrePostProcessor.outputsToPredictions(count, outputs, mImgScaleX, mImgScaleY, mIvScaleX, mIvScaleY, mStartX, mStartY);
+        for(String s : imageNames){
 
-            runOnUiThread(() -> {
-                mButtonDetect.setEnabled(true);
-                mButtonDetect2.setEnabled(true);
-                mButtonDetect.setText(getString(R.string.detect));
-                mProgressBar.setVisibility(ProgressBar.INVISIBLE);
-                mResultView.setResults(results);
-                mResultView.invalidate();
-                mResultView.setVisibility(View.VISIBLE);
-            });
+            try {
+                mBitmap = BitmapFactory.decodeStream(getAssets().open(s));
+//                runOnUiThread(() -> {
+//                    mImageView.setImageBitmap(mBitmap);
+//                });
+            } catch (IOException e) {
+                e.printStackTrace();
+                continue;
+            }
+
+            Bitmap resizedBitmap = Bitmap.createScaledBitmap(mBitmap, PrePostProcessor.INPUT_WIDTH, PrePostProcessor.INPUT_HEIGHT, true);
+
+            final FloatBuffer floatBuffer = Tensor.allocateFloatBuffer(3 * resizedBitmap.getWidth() * resizedBitmap.getHeight());
+            TensorImageUtils.bitmapToFloatBuffer(resizedBitmap, 0, 0, resizedBitmap.getWidth(), resizedBitmap.getHeight(), PrePostProcessor.NO_MEAN_RGB, PrePostProcessor.NO_STD_RGB, floatBuffer, 0);
+            final Tensor inputTensor = Tensor.fromBlob(floatBuffer, new long[]{3, resizedBitmap.getHeight(), resizedBitmap.getWidth()});
+
+            final long startTime = SystemClock.elapsedRealtime();
+            IValue[] outputTuple = mModule.forward(IValue.listFrom(inputTensor)).toTuple();
+            final long inferenceTime = SystemClock.elapsedRealtime() - startTime;
+            Log.d("D2Go", "inference time (ms): " + inferenceTime);
+
+            final Map<String, IValue> map = outputTuple[1].toList()[0].toDictStringKey();
+            float[] boxesData = new float[]{};
+            float[] scoresData = new float[]{};
+            long[] labelsData = new long[]{};
+            if (map.containsKey("boxes")) {
+                final Tensor boxesTensor = map.get("boxes").toTensor();
+                final Tensor scoresTensor = map.get("scores").toTensor();
+                final Tensor labelsTensor = map.get("labels").toTensor();
+                boxesData = boxesTensor.getDataAsFloatArray();
+                scoresData = scoresTensor.getDataAsFloatArray();
+                labelsData = labelsTensor.getDataAsLongArray();
+
+                final int n = scoresData.length;
+                float[] outputs = new float[n * PrePostProcessor.OUTPUT_COLUMN];
+                int count = 0;
+                for (int i = 0; i < n; i++) {
+                    if (scoresData[i] < 0.5)
+                        continue;
+
+                    outputs[PrePostProcessor.OUTPUT_COLUMN * count + 0] = boxesData[4 * i + 0];
+                    outputs[PrePostProcessor.OUTPUT_COLUMN * count + 1] = boxesData[4 * i + 1];
+                    outputs[PrePostProcessor.OUTPUT_COLUMN * count + 2] = boxesData[4 * i + 2];
+                    outputs[PrePostProcessor.OUTPUT_COLUMN * count + 3] = boxesData[4 * i + 3];
+                    outputs[PrePostProcessor.OUTPUT_COLUMN * count + 4] = scoresData[i];
+                    outputs[PrePostProcessor.OUTPUT_COLUMN * count + 5] = labelsData[i] - 1;
+                    count++;
+                }
+
+                final ArrayList<Result> results = PrePostProcessor.outputsToPredictions(count, outputs, mImgScaleX, mImgScaleY, mIvScaleX, mIvScaleY, mStartX, mStartY);
+
+                runOnUiThread(() -> {
+                    mImageView.setImageBitmap(mBitmap);
+                    mImageView.invalidate();
+                    mResultView.setResults(results);
+                    mResultView.invalidate();
+                    mResultView.setVisibility(View.VISIBLE);
+                });
+            }
         }
+
+        runOnUiThread(() -> {
+            mButtonDetect2.setEnabled(true);
+            mButtonDetect2.setText(getString(R.string.detect2));
+            mProgressBar2.setVisibility(ProgressBar.INVISIBLE);
+        });
     }
 
     @Override
