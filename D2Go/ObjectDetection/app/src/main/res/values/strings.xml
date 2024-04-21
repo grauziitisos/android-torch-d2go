@@ -2,6 +2,7 @@
     <string name="app_name">Ceļazīmju D2Go Oriģinālais</string>
     <string name="image_view">Attēls:</string>
     <string name="detect">Detektēt</string>
+    <string name="detect2">Mērīt</string>
     <string name="run_model">Atpazīstu...</string>
     <string name="restart">Restart</string>
     <string name="select">Izvēlēties</string>
