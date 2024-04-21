@@ -15,7 +15,7 @@ android {
     defaultConfig {
         applicationId "org.pytorch.demo.objectdetection"
         minSdkVersion 28
-        targetSdkVersion 30
+        targetSdkVersion 32
         versionCode 1
         versionName "1.0"
 
