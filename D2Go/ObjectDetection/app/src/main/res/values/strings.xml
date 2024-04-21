@@ -1,9 +1,9 @@
 <resources>
-    <string name="app_name">D2Go</string>
-    <string name="image_view">Image View</string>
-    <string name="detect">Detect</string>
-    <string name="run_model">Running the model...</string>
+    <string name="app_name">Ceļazīmju D2Go Oriģinālais</string>
+    <string name="image_view">Attēls:</string>
+    <string name="detect">Detektēt</string>
+    <string name="run_model">Atpazīstu...</string>
     <string name="restart">Restart</string>
-    <string name="select">Select</string>
-    <string name="live">Live</string>
+    <string name="select">Izvēlēties</string>
+    <string name="live">Kamera</string>
 </resources>

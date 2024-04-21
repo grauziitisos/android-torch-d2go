@@ -1,4 +1,4 @@
-package org.pytorch.demo.objectdetection;
+package org.pytorch.demo.d2goorig;
 
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;

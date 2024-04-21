@@ -4,7 +4,7 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-package org.pytorch.demo.objectdetection;
+package org.pytorch.demo.d2goorig;
 
 import android.Manifest;
 import android.content.DialogInterface;
@@ -41,9 +41,7 @@ import org.pytorch.torchvision.TensorImageUtils;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.StringReader;
 import java.nio.FloatBuffer;
-import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;

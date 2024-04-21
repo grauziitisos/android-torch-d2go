@@ -13,7 +13,7 @@ android {
     buildToolsVersion rootProject.buildToolsVersion
 
     defaultConfig {
-        applicationId "org.pytorch.demo.objectdetection"
+        applicationId "org.pytorch.demo.d2goorig"
         minSdkVersion 28
         targetSdkVersion 32
         versionCode 1
