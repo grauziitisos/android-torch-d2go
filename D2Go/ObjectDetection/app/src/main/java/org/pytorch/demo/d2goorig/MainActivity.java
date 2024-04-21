@@ -14,9 +14,15 @@ import android.content.res.AssetManager;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.Matrix;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.RectF;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.SystemClock;
 import android.provider.MediaStore;
 import android.util.Log;
@@ -40,12 +46,18 @@ import org.pytorch.Tensor;
 import org.pytorch.torchvision.TensorImageUtils;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.FloatBuffer;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 public class MainActivity extends AppCompatActivity implements Runnable {
@@ -77,12 +89,22 @@ static {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.READ_EXTERNAL_STORAGE}, 1);
+        String[] permissions = {
+                Manifest.permission.READ_EXTERNAL_STORAGE,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                Manifest.permission.CAMERA
+        };
+
+        boolean b403 = false;
+        for (String permission : permissions) {
+            if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
+                b403 = true;
+                break;
+            }
         }
 
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, 1);
+        if (b403) {
+            ActivityCompat.requestPermissions(this, permissions, 1);
         }
 
         setContentView(R.layout.activity_main);
@@ -255,9 +277,39 @@ static {
         }
     }
 
-    
+    private String resultFolderName = "__result" + new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault()).format(new Date());
+    private String TAG = "Ceļazīmju skatītĀjs d2";
+//    private void appendLog(String fname, String text) {
+//        File logFolder = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), resultFolderName);
+//
+//        try {
+//            Log.d(TAG, text);
+//            File logFile = new File(logFolder, fname);
+//            FileWriter writer = new FileWriter(logFile, true);
+//            writer.append(text);
+//            writer.append("\n");
+//            writer.close();
+//        } catch (IOException e) {
+//            e.printStackTrace();
+//        }
+//    }
 
+    private void appendLog(FileWriter writer, String text) {
+        try {
+            Log.d(TAG, text);
+            writer.append(text);
+            writer.append("\n");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private final static int TEXT_X = 40;
+    private final static int TEXT_Y = 35;
+    private final static int TEXT_WIDTH = 260;
+    private final static int TEXT_HEIGHT = 50;
     public void batchRun() {
+
         runOnUiThread(() -> {
             mButtonDetect2.setEnabled(false);
             mButtonDetect2.setText(getString(R.string.detect2_progress));
@@ -278,6 +330,24 @@ static {
                 e.printStackTrace();
             }
 
+        String modelPrefix = "d2go_original";
+        String ln =new SimpleDateFormat("yyyy_MM_dd_HH-mm-ss", Locale.getDefault()).format(new Date())+modelPrefix+".txt";
+        File logFolder = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), resultFolderName);
+        if (!logFolder.exists()) {
+            if (!logFolder.mkdirs()) {
+                Log.e(TAG, "Failed to create directory");
+                return;
+            }
+        }
+        FileWriter wr = null;
+        try {
+            wr = new FileWriter(new File(logFolder, ln), true);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        appendLog(wr, new SimpleDateFormat("yyyy_MM_dd_HH-mm-ss", Locale.getDefault()).format(new Date())+" Mdl: "+modelPrefix+" mdl file open...");
+        int c = 1;
+        float totalfps = 0f;
         for(String s : imageNames){
 
             try {
@@ -305,6 +375,7 @@ static {
             float[] boxesData = new float[]{};
             float[] scoresData = new float[]{};
             long[] labelsData = new long[]{};
+            float maxprob = 0f;
             if (map.containsKey("boxes")) {
                 final Tensor boxesTensor = map.get("boxes").toTensor();
                 final Tensor scoresTensor = map.get("scores").toTensor();
@@ -319,7 +390,8 @@ static {
                 for (int i = 0; i < n; i++) {
                     if (scoresData[i] < 0.5)
                         continue;
-
+                    if(scoresData[i]>maxprob)
+                        maxprob = scoresData[i];
                     outputs[PrePostProcessor.OUTPUT_COLUMN * count + 0] = boxesData[4 * i + 0];
                     outputs[PrePostProcessor.OUTPUT_COLUMN * count + 1] = boxesData[4 * i + 1];
                     outputs[PrePostProcessor.OUTPUT_COLUMN * count + 2] = boxesData[4 * i + 2];
@@ -330,6 +402,48 @@ static {
                 }
 
                 final ArrayList<Result> results = PrePostProcessor.outputsToPredictions(count, outputs, mImgScaleX, mImgScaleY, mIvScaleX, mIvScaleY, mStartX, mStartY);
+                Bitmap mmBitmap = mBitmap.copy(Bitmap.Config.ARGB_8888, true);
+
+                Canvas canvas = new Canvas(mmBitmap);
+                Paint mPaintRectangle = new Paint();
+                mPaintRectangle.setColor(Color.YELLOW);
+                Paint mPaintText = new Paint();
+                if (results != null)
+                for (Result result : results) {
+                    mPaintRectangle.setStrokeWidth(5);
+                    mPaintRectangle.setStyle(Paint.Style.STROKE);
+                    canvas.drawRect(result.rect, mPaintRectangle);
+
+                    Path mPath = new Path();
+                    RectF mRectF = new RectF(result.rect.left, result.rect.top, result.rect.left + TEXT_WIDTH,  result.rect.top + TEXT_HEIGHT);
+                    mPath.addRect(mRectF, Path.Direction.CW);
+                    mPaintText.setColor(Color.MAGENTA);
+                    canvas.drawPath(mPath, mPaintText);
+
+                    mPaintText.setColor(Color.WHITE);
+                    mPaintText.setStrokeWidth(0);
+                    mPaintText.setStyle(Paint.Style.FILL);
+                    mPaintText.setTextSize(32);
+                    canvas.drawText(String.format("%s %.2f", PrePostProcessor.mClasses[result.classIndex], result.score), result.rect.left + TEXT_X, result.rect.top + TEXT_Y, mPaintText);
+                }
+
+                File file = new File(logFolder, new SimpleDateFormat("yyyy_MM_dd_HH-mm-ss", Locale.getDefault()).format(new Date()) +
+                        "_" + modelPrefix + ".jpg");
+
+                try {
+                    FileOutputStream stream = new FileOutputStream(file);
+                    mmBitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream);
+                    stream.flush();
+                    stream.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+                float fps = 1 / (inferenceTime / 1000f);
+                totalfps += fps;
+                appendLog(wr, new SimpleDateFormat("yyyy_MM_dd_HH-mm-ss", Locale.getDefault()).format(new Date())+ " "+ maxprob+"_Mdl: "+modelPrefix+", Frame: "+c+
+                        ", Forward pass FPS: "+fps+", Forward pass time: "+inferenceTime/1000f+" seconds, Forward pass + annotation time: "+
+                        (SystemClock.elapsedRealtime() - startTime)/1000.0+"  seconds");
+                c++;
 
                 runOnUiThread(() -> {
                     mImageView.setImageBitmap(mBitmap);
@@ -346,6 +460,22 @@ static {
             mButtonDetect2.setText(getString(R.string.detect2));
             mProgressBar2.setVisibility(ProgressBar.INVISIBLE);
         });
+        float avgfps = 0f;
+        if(c>1) {
+            avgfps = totalfps / (c - 1);
+            appendLog(wr, new SimpleDateFormat("yyyy_MM_dd_HH-mm-ss", Locale.getDefault()).format(new Date())+" Mdl: "+modelPrefix+",  Average FFPS: "+avgfps);
+        }
+        appendLog(wr, new SimpleDateFormat("yyyy_MM_dd_HH-mm-ss", Locale.getDefault()).format(new Date())+" Mdl: "+modelPrefix+", <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Camera start .:.");
+        avgfps = 0f;
+        appendLog(wr, new SimpleDateFormat("yyyy_MM_dd_HH-mm-ss", Locale.getDefault()).format(new Date())+" Mdl: "+modelPrefix+",  Average FFPS: "+avgfps);
+        appendLog(wr, new SimpleDateFormat("yyyy_MM_dd_HH-mm-ss", Locale.getDefault()).format(new Date())+" Mdl: "+modelPrefix+", >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Camera end..");
+        appendLog(wr, new SimpleDateFormat("yyyy_MM_dd_HH-mm-ss", Locale.getDefault()).format(new Date())+" Mdl: "+modelPrefix+", py file exit ok...");
+        if (wr != null)
+        try {
+            wr.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
