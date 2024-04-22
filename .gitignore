@@ -5,3 +5,4 @@ local.properties
 .idea/
 .externalNativeBuild
 build
+/D2Go/ObjectDetection/app/src/main/assets/img
